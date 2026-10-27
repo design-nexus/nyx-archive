@@ -1,4 +1,4 @@
-//! Archive's tools on the control interface (`nixe_core::control`), for Nixe Assistant: look
+//! Archive's tools on the control interface (`nyx_core::control`), for Nyx Assistant: look
 //! inside an archive, open it, extract it, or pack files into a new one. Every path stays
 //! inside the home folder; extracting never replaces files unless asked.
 
@@ -8,7 +8,7 @@ use crate::sevenzip::{
     ListError,
 };
 use crate::{cmd, window};
-use nixe_core::control::{self, text, Reply};
+use nyx_core::control::{self, text, Reply};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 

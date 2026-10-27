@@ -6,7 +6,7 @@ use crate::sevenzip::job::{self, Cancel, Event, Op, Outcome};
 use crate::views::{browse::Browse, create::Create, home::Home};
 use crate::{paths, prefs, settings_dialog, sevenzip, theme, widgets};
 use gtk::prelude::*;
-use nixe_ui::chrome;
+use nyx_ui::chrome;
 use gtk::{gio, glib};
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -204,7 +204,7 @@ fn build(app: &gtk::Application) {
     window.add_css_class("archive-window");
     // No client-side titlebar: Hyprland manages the window.
     window.set_titlebar(Some(&gtk::Box::new(gtk::Orientation::Horizontal, 0)));
-    nixe_ui::keys::install(&window, nixe_ui::keys::Common { settings: Some(crate::views::settings::show), shortcuts: None, close: true, palette: None });
+    nyx_ui::keys::install(&window, nyx_ui::keys::Common { settings: Some(crate::views::settings::show), shortcuts: None, close: true, palette: None });
     window.set_icon_name(Some(crate::APP_ID));
     window.set_size_request(360, 360);
 
@@ -628,7 +628,7 @@ type ToastAction = Option<(String, Box<dyn Fn()>)>;
 
 fn toast_with(message: &str, action: ToastAction) {
     let Some(ui) = ui() else {
-        eprintln!("nixe-archive: {message}");
+        eprintln!("nyx-archive: {message}");
         return;
     };
     // A new toast replaces the one showing.

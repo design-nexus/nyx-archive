@@ -6,7 +6,7 @@ members = ["apps/archive"]
 edition = "2024"
 license = "MIT"
 authors = ["Ken Smith"]
-repository = "https://github.com/design-nexus/nixe-archive"
+repository = "https://github.com/design-nexus/nyx-archive"
 
 [profile.release]
 lto = "thin"

@@ -18,16 +18,16 @@ use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::path::PathBuf;
 
-pub const APP_ID: &str = "io.github.design_nexus.nixe.Archive";
+pub const APP_ID: &str = "io.github.design_nexus.nyx.Archive";
 
-const USAGE: &str = "Usage: nixe-archive [OPTIONS] [FILE…]\n\
+const USAGE: &str = "Usage: nyx-archive [OPTIONS] [FILE…]\n\
 \n\
   FILE            open this archive\n\
   --create FILE…  compress these files into a new archive\n";
 
 fn main() -> glib::ExitCode {
-    nixe_core::app::init(nixe_core::app::App { slug: "nixe-archive", name: "Archive" });
-    nixe_core::migrate::from(&["nexus-archive"]);
+    nyx_core::app::init(nyx_core::app::App { slug: "nyx-archive", name: "Archive" });
+    nyx_core::migrate::from(&["nexus-archive"]);
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print!("{USAGE}");
@@ -41,8 +41,8 @@ fn main() -> glib::ExitCode {
     // Developer aid: a different id gives a separate instance for test runs.
     let id = std::env::var("NARC_APP_ID").unwrap_or_else(|_| APP_ID.to_string());
     let app = gtk::Application::builder().application_id(id).flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE).build();
-    // Nixe Assistant lists, extracts and packs archives through this (primary instance only).
-    app.connect_startup(|app| nixe_core::control::serve_async(app, control::tools(), control::handle));
+    // Nyx Assistant lists, extracts and packs archives through this (primary instance only).
+    app.connect_startup(|app| nyx_core::control::serve_async(app, control::tools(), control::handle));
     app.connect_command_line(|app, cl| {
         let argv: Vec<String> = cl.arguments().iter().map(|a| a.to_string_lossy().to_string()).collect();
         let create = argv.iter().any(|a| a == "--create");

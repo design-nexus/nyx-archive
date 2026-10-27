@@ -114,7 +114,7 @@ pub fn show() {
     let options: Vec<(String, String)> = themes.iter().map(|t| (t.id.clone(), t.name.clone())).collect();
     let (theme_row, theme_dd) = widgets::choice_row(
         "Theme",
-        "Dracula, Catppuccin, Tokyo Night and more. Add your own in <tt>~/.config/nixe-archive/themes</tt>.",
+        "Dracula, Catppuccin, Tokyo Night and more. Add your own in <tt>~/.config/nyx-archive/themes</tt>.",
         options,
         &p.theme,
         |id| {

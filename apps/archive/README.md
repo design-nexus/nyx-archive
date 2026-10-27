@@ -3,7 +3,7 @@
 An archive manager for [Omarchy](https://omarchy.org), built on 7-Zip. Open an archive to
 browse it, extract all or part of it, or compress files into a new one. It takes its
 colors from your Omarchy theme, and opens as a floating window (the installer adds
-the Hyprland rule to `~/.config/hypr/nixe.lua`).
+the Hyprland rule to `~/.config/hypr/nyx.lua`).
 
 ## What it does
 
@@ -35,23 +35,23 @@ see them in the process list while a job runs.
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/design-nexus/nixe-archive/main/install.sh | bash -s -- archive
+curl -fsSL https://raw.githubusercontent.com/design-nexus/nyx-archive/main/install.sh | bash -s -- archive
 ```
 
 This installs GTK 4 and 7-Zip if they're missing, builds with Cargo, and installs to
 `~/.local`. Add `--default` to also make it the app that opens archive files:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/design-nexus/nixe-archive/main/install.sh | bash -s -- archive --default
+curl -fsSL https://raw.githubusercontent.com/design-nexus/nyx-archive/main/install.sh | bash -s -- archive --default
 ```
 
-Remove it with `nixe uninstall archive` (add `--purge` to delete its settings too).
+Remove it with `nyx uninstall archive` (add `--purge` to delete its settings too).
 
 ## Command line
 
 ```sh
-nixe-archive FILE            # open an archive
-nixe-archive --create FILE…  # compress these files into a new archive
+nyx-archive FILE            # open an archive
+nyx-archive --create FILE…  # compress these files into a new archive
 ```
 
 ## Keyboard
@@ -75,9 +75,9 @@ nixe-archive --create FILE…  # compress these files into a new archive
 ## Settings
 
 Open them with the gear. **Archive window** has *Follow Omarchy theme*, a theme list
-(15 bundled themes, plus your own in `~/.config/nixe-archive/themes/*.toml`), *Glow* and
+(15 bundled themes, plus your own in `~/.config/nyx-archive/themes/*.toml`), *Glow* and
 *Reduce motion*. Extracting has the default folder and the overwrite choice. They're saved in
-`~/.config/nixe-archive/settings.toml`.
+`~/.config/nyx-archive/settings.toml`.
 
 ## Build
 

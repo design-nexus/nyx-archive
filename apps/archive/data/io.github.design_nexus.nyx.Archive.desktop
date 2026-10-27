@@ -3,18 +3,18 @@ Type=Application
 Name=Archive
 GenericName=Archive Manager
 Comment=Browse, extract and create 7z, zip, tar and other archives
-Exec=nixe-archive %U
-Icon=io.github.design_nexus.nixe.Archive
+Exec=nyx-archive %U
+Icon=io.github.design_nexus.nyx.Archive
 Terminal=false
 Categories=Utility;Archiving;Compression;GTK;
 Keywords=archive;zip;7z;7zip;tar;rar;compress;extract;unzip;
 MimeType=application/x-7z-compressed;application/zip;application/x-tar;application/gzip;application/x-xz;application/x-bzip2;application/zstd;application/vnd.rar;application/x-rar;application/x-compressed-tar;application/x-xz-compressed-tar;application/x-bzip-compressed-tar;application/x-cd-image;application/vnd.debian.binary-package;
 StartupNotify=true
-StartupWMClass=io.github.design_nexus.nixe.Archive
+StartupWMClass=io.github.design_nexus.nyx.Archive
 SingleMainWindow=true
 DBusActivatable=false
 Actions=Create;
 
 [Desktop Action Create]
 Name=New archive
-Exec=nixe-archive --create
+Exec=nyx-archive --create

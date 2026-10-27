@@ -2,7 +2,7 @@
   "application": "archive",
   "directory": "archive",
   "packages": [
-    "nixe-archive"
+    "nyx-archive"
   ],
   "manifest": "Cargo.toml",
   "prepare": [],
@@ -13,9 +13,9 @@
       "test",
       "--locked",
       "-p",
-      "nixe-archive",
+      "nyx-archive",
       "--bin",
-      "nixe-archive"
+      "nyx-archive"
     ]
   ]
 }
