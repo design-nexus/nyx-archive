@@ -76,7 +76,7 @@ impl Create {
         t.add_css_class("page-first");
         t.set_hexpand(true);
         head.append(&t);
-        let files_summary = widgets::label("", "mono");
+        let files_summary = widgets::label("", "tnum");
         files_summary.add_css_class("dim");
         files_summary.set_valign(gtk::Align::Start);
         head.append(&files_summary);
@@ -112,7 +112,7 @@ impl Create {
         let name = gtk::Entry::new();
         name.set_hexpand(true);
         name.set_width_chars(16);
-        let ext = widgets::label("", "mono");
+        let ext = widgets::label("", "tnum");
         ext.add_css_class("dim");
         let name_box = widgets::hbox(6);
         name_box.append(&name);
@@ -163,7 +163,7 @@ impl Create {
             measured: 0,
         };
 
-        let summary = widgets::label("", "mono");
+        let summary = widgets::label("", "tnum");
         summary.add_css_class("dim");
         summary.set_hexpand(true);
         summary.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
@@ -424,7 +424,7 @@ impl Create {
             name.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
             name.set_hexpand(true);
             row.append(&name);
-            let dir = widgets::label(&path.parent().map(paths::pretty).unwrap_or_default(), "mono");
+            let dir = widgets::label(&path.parent().map(paths::pretty).unwrap_or_default(), "dim");
             dir.add_css_class("dim");
             dir.add_css_class("col-hide-narrow");
             dir.set_xalign(1.0);
@@ -453,7 +453,6 @@ impl Create {
         self.dir_button.set_label(&paths::pretty(&dir));
         if let Some(l) = self.dir_button.child().and_downcast::<gtk::Label>() {
             l.set_ellipsize(gtk::pango::EllipsizeMode::Start);
-            l.add_css_class("mono");
         }
         self.password_row.set_visible(format.can_encrypt());
         self.names_row.set_visible(format.can_encrypt_names());

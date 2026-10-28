@@ -9,7 +9,7 @@ pub use nyx_ui::settings_card::{escape, fit, focus_search, is_open};
 /// Each settings group's icon and one-line summary in the dialog's list.
 const GROUPS: &[(&str, &str, &str)] = &[
     ("Extracting", "folder-download-symbolic", "Where files go, overwriting"),
-    ("Archive window", "applications-graphics-symbolic", "Theme, glow, motion"),
+    ("Archive window", "applications-graphics-symbolic", "Theme, accent, motion"),
     ("Keyboard", "input-keyboard-symbolic", "Shortcuts"),
 ];
 

@@ -146,7 +146,7 @@ fn row_widgets() -> gtk::Box {
     let name = widgets::label("", "file-name");
     name.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
     name_box.append(&name);
-    let path = widgets::label("", "mono");
+    let path = widgets::label("", "dim");
     path.add_css_class("dim");
     path.add_css_class("file-path");
     path.set_ellipsize(gtk::pango::EllipsizeMode::Start);
@@ -157,7 +157,7 @@ fn row_widgets() -> gtk::Box {
     lock.set_tooltip_text(Some("Encrypted"));
     c.append(&lock);
     for class in ["col-size", "col-packed", "col-modified"] {
-        let l = widgets::label("", "mono");
+        let l = widgets::label("", "tnum");
         l.add_css_class("dim");
         l.add_css_class("cell");
         l.add_css_class(class);
@@ -222,7 +222,7 @@ impl Browse {
         readonly.set_valign(gtk::Align::Center);
         readonly.set_tooltip_text(Some("7-Zip can read this kind of archive but not change it. Extract it and make a new one to change its contents."));
         readonly.set_visible(false);
-        let subtitle = widgets::label("", "status-readout");
+        let subtitle = widgets::label("", "header-status");
         subtitle.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
         let extract = widgets::tool_button("document-save-symbolic", "Extract", "Extract (Ctrl+E)", "label-high");
@@ -332,8 +332,8 @@ impl Browse {
         root.append(&scroll);
         root.append(&empty);
 
-        // What's shown and selected; the window puts it in its status bar.
-        let status = widgets::label("", "status-readout");
+        // What's shown and selected; the window puts it in its header.
+        let status = widgets::label("", "header-status");
         status.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
         let actions = gio::SimpleActionGroup::new();
@@ -672,7 +672,7 @@ impl Browse {
         for (k, v) in facts {
             let c = widgets::vbox(2);
             c.append(&widgets::label(&k.to_uppercase(), "info-key"));
-            let val = widgets::label(&v, "mono");
+            let val = widgets::label(&v, "tnum");
             val.set_ellipsize(gtk::pango::EllipsizeMode::End);
             c.append(&val);
             self.info_body.append(&c);

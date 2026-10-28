@@ -1,6 +1,7 @@
-//! The main window: a top bar (back, where you are, settings, close), a stack of
-//! three views (home, browse, create) and a status bar, with a progress card,
-//! the settings card and toasts floating over it.
+//! The main window: the header (back, the app and where you are; while browsing, the
+//! archive's details and what's shown and selected; settings) over a stack of three
+//! views (home, browse, create), with a progress card, the settings card and toasts
+//! floating over it.
 
 use crate::sevenzip::job::{self, Cancel, Event, Op, Outcome};
 use crate::views::{browse::Browse, create::Create, home::Home};
@@ -46,6 +47,7 @@ struct Ui {
     create: Rc<Create>,
     cancel: RefCell<Option<Cancel>>,
     back: gtk::Button,
+    header: chrome::AppHeader,
 }
 
 thread_local! {
@@ -124,8 +126,8 @@ pub fn show(view: &str) {
     }
 }
 
-/// The window title names the view (the archive's name while browsing); the
-/// browse parts of the status bar show only while browsing.
+/// The window title and the header's subtitle name the view (the archive's name while
+/// browsing); the browse parts of the header show only while browsing.
 fn refresh_bars(ui: &Ui) {
     let view = ui.stack.visible_child_name().map(|n| n.to_string()).unwrap_or_default();
     let browsing = view == "browse";
@@ -135,6 +137,7 @@ fn refresh_bars(ui: &Ui) {
         _ => String::new(),
     };
     chrome::set_title(&ui.window, "Archive", &page);
+    ui.header.set_subtitle(&page);
     ui.back.set_visible(view != "home");
     for w in [ui.browse.readonly.upcast_ref::<gtk::Widget>(), ui.browse.subtitle.upcast_ref(), ui.browse.status.upcast_ref()] {
         if let Some(parent) = w.parent() {
@@ -200,7 +203,7 @@ pub fn fits(class: &str) -> bool {
 }
 
 fn build(app: &gtk::Application) {
-    let window = gtk::ApplicationWindow::builder().application(app).title("Archive").default_width(960).default_height(640).build();
+    let window = gtk::ApplicationWindow::builder().application(app).title("Archive").default_width(1280).default_height(800).build();
     window.add_css_class("archive-window");
     // No client-side titlebar: Hyprland manages the window.
     window.set_titlebar(Some(&gtk::Box::new(gtk::Orientation::Horizontal, 0)));
@@ -231,44 +234,30 @@ fn build(app: &gtk::Application) {
         .build();
     holder.set_vexpand(true);
 
-    // Back to the start, at the start of the status bar (Esc does it too).
+    // ----- Header -----
+    // Back away from the start, the app and where you are; while browsing, whether the
+    // archive is read-only, what it holds and what's shown and selected; Settings.
+    let header = chrome::app_header(&window, "media-zip-symbolic", "Archive");
     let back = widgets::bar_button("go-previous-symbolic", "Back to start (Esc)");
     back.connect_clicked(|_| show("home"));
-
-    // The bar along the bottom: back and the shortcuts on the left; while
-    // browsing, the archive (and whether it's read-only) and what's shown and
-    // selected on the right; then settings.
-    let status = widgets::hbox(16);
-    status.add_css_class("status-bar");
-    status.append(&back);
-    let help = gtk::Button::new();
-    help.add_css_class("status-help");
-    let help_content = widgets::hbox(10);
-    help_content.append(&widgets::label("F1", "status-key"));
-    help_content.append(&widgets::label("Shortcuts", ""));
-    help.set_child(Some(&help_content));
-    help.set_tooltip_text(Some("Show the keyboard shortcuts"));
-    help.connect_clicked(|_| crate::views::settings::show_help());
-    status.append(&help);
-    let spacer = widgets::hbox(0);
-    spacer.set_hexpand(true);
-    status.append(&spacer);
+    header.start.append(&back);
+    header.end.set_spacing(10);
     let tag = widgets::hbox(0);
     tag.append(&browse.readonly);
-    status.append(&tag);
+    header.end.append(&tag);
     let about = widgets::hbox(0);
     about.add_css_class("col-hide-narrow");
     about.append(&browse.subtitle);
-    status.append(&about);
+    header.end.append(&about);
     let counts = widgets::hbox(0);
     counts.append(&browse.status);
-    status.append(&counts);
-    status.append(&chrome::gear(crate::views::settings::show));
+    header.end.append(&counts);
+    header.end.append(&chrome::settings_button(crate::views::settings::show));
 
     let frame = widgets::vbox(0);
     frame.add_css_class("window-frame");
+    frame.append(&header.root);
     frame.append(&holder);
-    frame.append(&status);
 
     let overlay = gtk::Overlay::new();
     overlay.set_child(Some(&frame));
@@ -320,6 +309,7 @@ fn build(app: &gtk::Application) {
         create,
         cancel: RefCell::new(None),
         back,
+        header,
     });
     refresh_bars(&state);
     UI.with(|u| *u.borrow_mut() = Some(state));
@@ -475,7 +465,7 @@ fn build_progress() -> Progress {
     root.append(&bar);
 
     let bottom = widgets::hbox(12);
-    let current = widgets::label("", "mono");
+    let current = widgets::label("", "dim");
     current.add_css_class("dim");
     current.add_css_class("progress-file");
     current.set_hexpand(true);

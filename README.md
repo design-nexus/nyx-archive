@@ -74,8 +74,8 @@ nyx-archive --create FILE…  # compress these files into a new archive
 
 ## Settings
 
-Open them with the gear. **Archive window** has *Follow Omarchy theme*, a theme list
-(15 bundled themes, plus your own in `~/.config/nyx-archive/themes/*.toml`), *Glow* and
+Open them with the sliders at the right of the header. **Archive window** has *Follow Omarchy theme*, a theme list
+(15 bundled themes, plus your own in `~/.config/nyx-archive/themes/*.toml`), *Accent* and
 *Reduce motion*. Extracting has the default folder and the overwrite choice. They're saved in
 `~/.config/nyx-archive/settings.toml`.
 

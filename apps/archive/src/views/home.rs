@@ -168,7 +168,7 @@ fn recent_row(path: &Path, home: &Home) -> gtk::Box {
     let name = widgets::label(&path.file_name().unwrap_or_default().to_string_lossy(), "settings-option-title");
     name.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
     let dir = path.parent().map(paths::pretty).unwrap_or_default();
-    let sub = widgets::label(&dir, "mono");
+    let sub = widgets::label(&dir, "dim");
     sub.add_css_class("settings-option-description");
     sub.set_ellipsize(gtk::pango::EllipsizeMode::Start);
     text.append(&name);
@@ -184,7 +184,7 @@ fn recent_row(path: &Path, home: &Home) -> gtk::Box {
             .and_then(|d| d.format("%-d %b %Y").ok())
             .map(|s| s.to_string())
             .unwrap_or_default();
-        let facts = widgets::label(&format!("{kind} · {} · {when}", fmt::size(meta.len())), "mono");
+        let facts = widgets::label(&format!("{kind} · {} · {when}", fmt::size(meta.len())), "tnum");
         facts.add_css_class("dim");
         facts.add_css_class("recent-facts");
         facts.add_css_class("col-hide-narrow");
