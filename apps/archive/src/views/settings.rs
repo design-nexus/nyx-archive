@@ -71,6 +71,19 @@ pub fn show() {
         g
     };
 
+    let g = group("Creating");
+    let (row, _) = widgets::choice_row(
+        "Default format", "Format selected when Archive next opens.",
+        widgets::opts(&[("7z", "7z"), ("zip", "ZIP"), ("tar.gz", "tar.gz"), ("tar.xz", "tar.xz")]),
+        &p.last_format, |id| prefs::update(|p| p.last_format = id),
+    );
+    g.append(&row);
+    let (row, _) = widgets::choice_row(
+        "Compression level", "Higher levels make smaller archives but take longer. Used next time Archive opens.",
+        widgets::opts(&[("0", "Store"), ("1", "Fast"), ("5", "Normal"), ("7", "Maximum"), ("9", "Ultra")]),
+        &p.last_level.to_string(), |id| prefs::update(|p| p.last_level = id.parse().unwrap_or(5)),
+    );
+    g.append(&row);
     // ----- Extracting -----
     let g = group("Extracting");
     let (r, _) = widgets::switch_row("Extract into a new folder", "Files go into a folder named after the archive, so nothing gets mixed in.", p.extract_into_folder, |on| {
@@ -107,5 +120,10 @@ pub fn show() {
     );
     g.append(&r);
 
+    let (row, _) = widgets::switch_row(
+        "Open the folder when done", "Show the result after extracting or creating an archive.",
+        p.open_when_done, |on| prefs::update(|p| p.open_when_done = on),
+    );
+    g.append(&row);
     window::open_settings(&scroll, &body);
 }

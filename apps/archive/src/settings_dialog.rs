@@ -7,7 +7,7 @@ use nyx_ui::settings_card::{self, About, Spec, Standard};
 pub use nyx_ui::settings_card::{escape, fit, focus_search, is_open};
 
 /// Each settings group's icon and one-line summary in the dialog's list.
-const GROUPS: &[(&str, &str, &str)] = &[("Extracting", "folder-download-symbolic", "Where files go, overwriting")];
+const GROUPS: &[(&str, &str, &str)] = &[("Creating", "package-x-generic-symbolic", "Format, compression"), ("Extracting", "folder-download-symbolic", "Where files go, overwriting")];
 
 const SPEC: Spec = Spec {
     groups: GROUPS,
