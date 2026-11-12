@@ -254,15 +254,10 @@ fn build(app: &gtk::Application) {
     header.end.append(&counts);
     header.end.append(&chrome::settings_button(crate::views::settings::show));
 
-    let frame = widgets::vbox(0);
-    frame.add_css_class("window-frame");
-    frame.append(&header.root);
-    frame.append(&holder);
-
-    let overlay = gtk::Overlay::new();
-    overlay.set_child(Some(&frame));
+    let frame = nyx_ui::frame::AppFrame::new(&header.root);
+    frame.set_page(&holder);
+    let overlay = frame.install(&window);
     overlay.add_overlay(&progress.root);
-    window.set_child(Some(&overlay));
 
     // The window has no resize signal worth trusting, so a tick callback watches the width.
     window.add_tick_callback(|w, _| {
