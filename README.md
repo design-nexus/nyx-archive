@@ -29,8 +29,8 @@ the Hyprland rule to `~/.config/hypr/nyx.lua`).
   with a Cancel button and *Open folder when done*. Canceled or failed jobs leave no
   half-written archive, and errors have a *Details* button with 7-Zip's full output.
 
-Passwords are passed to 7-Zip on its command line, so other users on the same machine could
-see them in the process list while a job runs.
+Passwords go to 7-Zip through its standard input, never on its command line, so other
+users on the same machine can't see them in the process list.
 
 ## Install
 

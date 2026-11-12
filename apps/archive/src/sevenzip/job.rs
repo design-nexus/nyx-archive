@@ -117,8 +117,16 @@ impl Op {
     }
 }
 
+/// The password, if there is one. It goes to 7-Zip's stdin, never on the command line
+/// (where other accounts can read it): commands that write take a bare `-p` (read from
+/// stdin), and those that read ask for it on stdin when they meet encryption.
+fn secret(arg: &Option<String>) -> Option<String> {
+    arg.as_ref().filter(|p| !p.is_empty()).cloned()
+}
+
+/// `-p` without a value, for commands that write an encrypted archive.
 fn pw(arg: &Option<String>) -> Option<String> {
-    arg.as_ref().filter(|p| !p.is_empty()).map(|p| format!("-p{p}"))
+    secret(arg).map(|_| s("-p"))
 }
 
 /// Switches that make `7zz` print progress and nothing else we have to parse.
@@ -142,6 +150,8 @@ pub struct Plan {
     pub mkdir: Vec<PathBuf>,
     /// Temp files or folders to remove at the end, whatever happened.
     pub cleanup: Vec<PathBuf>,
+    /// The password, written to each stage's stdin.
+    pub secret: Option<String>,
 }
 
 fn s(x: impl Into<String>) -> String {
@@ -159,7 +169,7 @@ pub fn plan(op: &Op) -> Plan {
         Op::Extract { archive, dest, paths, password, overwrite } => {
             let mut a = vec![s("x"), s("-y"), overwrite.flag().into(), format!("-o{}", dest.display())];
             a.extend(QUIET.map(s));
-            a.extend(pw(password));
+            p.secret = secret(password);
             // `--` so a name that starts with a dash isn't read as a switch.
             a.push(s("--"));
             a.push(archive.display().to_string());
@@ -169,7 +179,7 @@ pub fn plan(op: &Op) -> Plan {
         Op::Test { archive, password } => {
             let mut a = vec![s("t")];
             a.extend(QUIET.map(s));
-            a.extend(pw(password));
+            p.secret = secret(password);
             a.push(s("--"));
             a.push(archive.display().to_string());
             p.stages.push(a);
@@ -178,6 +188,7 @@ pub fn plan(op: &Op) -> Plan {
             let mut a = vec![s("d")];
             a.extend(QUIET.map(s));
             a.extend(pw(password));
+            p.secret = secret(password);
             a.push(s("--"));
             a.push(archive.display().to_string());
             a.extend(paths.iter().cloned());
@@ -187,6 +198,7 @@ pub fn plan(op: &Op) -> Plan {
             let mut a = vec![s("a")];
             a.extend(QUIET.map(s));
             a.extend(pw(password));
+            p.secret = secret(password);
             a.push(s("--"));
             a.push(archive.display().to_string());
             a.extend(inputs.iter().map(|i| i.display().to_string()));
@@ -196,6 +208,7 @@ pub fn plan(op: &Op) -> Plan {
             let mut a = vec![s("a")];
             a.extend(QUIET.map(s));
             a.extend(pw(password));
+            p.secret = secret(password);
             a.push(s("--"));
             a.push(archive.display().to_string());
             a.extend(rel.iter().cloned());
@@ -253,7 +266,8 @@ fn plan_create(o: &CreateOpts, p: &mut Plan) {
                 a.push(format!("-v{mb}m"));
             }
             if let Some(pass) = o.password.as_ref().filter(|p| !p.is_empty() && o.format.can_encrypt()) {
-                a.push(format!("-p{pass}"));
+                a.push(s("-p"));
+                p.secret = Some(pass.clone());
                 if o.format == Format::SevenZ && o.encrypt_names {
                     a.push(s("-mhe=on"));
                 } else if o.format == Format::Zip {
@@ -380,7 +394,7 @@ fn execute(binary: &str, op: &Op, cancel: &Cancel, tx: &async_channel::Sender<Ev
         }
     }
     for (i, stage) in plan.stages.iter().enumerate() {
-        match run_stage(binary, stage, plan.cwd.as_deref(), cancel, |pr| {
+        match run_stage(binary, stage, plan.cwd.as_deref(), plan.secret.as_deref(), cancel, |pr| {
             let percent = ((i * 100 + pr.percent as usize) / total) as u8;
             let _ = tx.send_blocking(Event::Progress(Progress { percent, current: pr.current }));
         }) {
@@ -411,12 +425,20 @@ fn execute(binary: &str, op: &Op, cancel: &Cancel, tx: &async_channel::Sender<Ev
     outcome
 }
 
-fn run_stage(binary: &str, args: &[String], cwd: Option<&Path>, cancel: &Cancel, mut on_progress: impl FnMut(Progress)) -> Outcome {
+fn run_stage(
+    binary: &str,
+    args: &[String],
+    cwd: Option<&Path>,
+    secret: Option<&str>,
+    cancel: &Cancel,
+    mut on_progress: impl FnMut(Progress),
+) -> Outcome {
     if cancel.is_cancelled() {
         return Outcome::Cancelled;
     }
     let mut command = Command::new(binary);
-    command.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let stdin = if secret.is_some() { Stdio::piped() } else { Stdio::null() };
+    command.args(args).stdin(stdin).stdout(Stdio::piped()).stderr(Stdio::piped());
     if let Some(dir) = cwd {
         command.current_dir(dir);
     }
@@ -425,6 +447,14 @@ fn run_stage(binary: &str, args: &[String], cwd: Option<&Path>, cancel: &Cancel,
         Err(e) => return Outcome::Failed(format!("Couldn't start {binary}: {e}")),
     };
     cancel.pid.store(child.id(), Ordering::SeqCst);
+    if let (Some(pass), Some(mut input)) = (secret, child.stdin.take()) {
+        // Twice: changing an archive whose names are encrypted asks once to open it and
+        // once for what it writes. 7-Zip reads it when it needs it; the rest is ignored.
+        let line = format!("{pass}\n{pass}\n");
+        std::thread::spawn(move || {
+            let _ = std::io::Write::write_all(&mut input, line.as_bytes());
+        });
+    }
     let mut stderr = child.stderr.take().expect("piped");
     let err_thread = std::thread::spawn(move || {
         let mut text = String::new();
@@ -614,7 +644,9 @@ mod tests {
             password: Some("pw".into()),
             overwrite: Overwrite::Replace,
         });
-        assert_eq!(p.stages[0], ["x", "-y", "-aoa", "-o/d", "-bsp1", "-bso0", "-bse1", "-ppw", "--", "/a/x.zip", "docs/a.txt"]);
+        // The password goes to stdin, never into the arguments.
+        assert_eq!(p.stages[0], ["x", "-y", "-aoa", "-o/d", "-bsp1", "-bso0", "-bse1", "--", "/a/x.zip", "docs/a.txt"]);
+        assert_eq!(p.secret.as_deref(), Some("pw"));
     }
 
     #[test]
@@ -625,7 +657,8 @@ mod tests {
         o.split_mb = Some(100);
         let p = plan(&Op::Create(o));
         let a = &p.stages[0];
-        assert!(a.contains(&"-mhe=on".to_string()) && a.contains(&"-psecret".to_string()) && a.contains(&"-v100m".to_string()));
+        assert!(a.contains(&"-mhe=on".to_string()) && a.contains(&"-p".to_string()) && a.contains(&"-v100m".to_string()));
+        assert!(!a.iter().any(|x| x.contains("secret")) && p.secret.as_deref() == Some("secret"));
         assert!(a.contains(&"-mx=5".to_string()) && a.contains(&"-ms=on".to_string()));
         assert!(p.rename.is_empty());
         assert!(a.contains(&"/out/x.7z".to_string()));

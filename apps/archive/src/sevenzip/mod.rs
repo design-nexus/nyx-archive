@@ -25,11 +25,18 @@ pub enum ListError {
 pub fn list(binary: &str, archive: &Path, password: Option<&str>) -> Result<Listing, ListError> {
     let mut cmd = Command::new(binary);
     cmd.args(["l", "-slt", "-sccUTF-8"]);
-    if let Some(p) = password.filter(|p| !p.is_empty()) {
-        cmd.arg(format!("-p{p}"));
+    // The password goes to stdin when 7-Zip asks for it, never on the command line.
+    let password = password.filter(|p| !p.is_empty());
+    cmd.arg("--").arg(archive).stdin(if password.is_some() { Stdio::piped() } else { Stdio::null() });
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| ListError::Failed(format!("Couldn't start {binary}: {e}")))?;
+    if let (Some(p), Some(mut input)) = (password, child.stdin.take()) {
+        let line = format!("{p}\n");
+        std::thread::spawn(move || {
+            let _ = std::io::Write::write_all(&mut input, line.as_bytes());
+        });
     }
-    cmd.arg("--").arg(archive).stdin(Stdio::null());
-    let out = cmd.output().map_err(|e| ListError::Failed(format!("Couldn't start {binary}: {e}")))?;
+    let out = child.wait_with_output().map_err(|e| ListError::Failed(format!("Couldn't read {binary}: {e}")))?;
     let text = String::from_utf8_lossy(&out.stdout).to_string();
     if out.status.success() || !text.contains("\n----------\n") && out.status.code() == Some(1) && text.contains("Warnings") {
         return Ok(parse::parse_listing(&text));
