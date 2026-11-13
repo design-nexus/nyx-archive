@@ -27,51 +27,6 @@ window.archive-window .app-header button.bar-button {
   padding: 14px 16px;
 }
 
-/* ---------- Drop zone and recent list ---------- */
-
-.dropzone {
-  padding: 44px 24px;
-  border-radius: 14px;
-  border: 1.5px dashed alpha(@theme_text, 0.14);
-  transition: border-color 120ms ease-out, background 120ms ease-out;
-}
-
-.dropzone.drop-hover {
-  border-color: alpha(@theme_accent, 0.6);
-  background: alpha(@theme_accent, 0.06);
-}
-
-.dropzone-icon {
-  color: @theme_accent;
-}
-
-.dropzone-title {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.recent-row {
-  border-radius: var(--nyx-radius-card);
-  background: @theme_card;
-  padding: 2px 6px 2px 2px;
-  transition: background 120ms ease-out;
-}
-
-.recent-row:hover {
-  background: mix(@theme_card, @theme_text, 0.04);
-}
-
-window.archive-window .recent-row button.flat {
-  min-height: 48px;
-  padding: 4px 12px;
-}
-
-.recent-facts {
-  font-size: 12px;
-  color: @theme_text_tertiary;
-  font-feature-settings: "tnum";
-}
-
 /* ---------- Browse ---------- */
 
 /* The archive's toolbar, above the path and the list. */
@@ -245,54 +200,13 @@ window.archive-window button.small-button {
   color: @theme_text;
 }
 
-/* ---------- Create ---------- */
-
-.files-card {
-  border-radius: var(--nyx-radius-card);
-  background: @theme_card;
-  padding: 6px;
-}
-
-.input-row {
-  padding: 4px 6px 4px 10px;
-  border-radius: var(--nyx-radius-small);
-}
-
-.input-row:hover {
-  background: @row_hover;
-}
-
-.files-empty {
-  padding: 26px 16px;
-}
-
-.files-actions {
-  padding: 6px 4px 4px;
-}
-
-.create-footer {
-  padding: 12px 28px;
-  background: @theme_bg;
-}
-
 window.archive-window button.path-button {
   min-width: 0;
 }
 
-window.archive-window button.disclosure {
-  min-height: 56px;
-  padding: 10px 14px;
-  border-radius: var(--nyx-radius-card);
-  background: @theme_card;
-  border: none;
-}
-
-window.archive-window button.disclosure:hover {
-  background: mix(@theme_card, @theme_text, 0.04);
-}
-
 .chevron {
-  color: @theme_dim_text;
+  color: @theme_accent;
+  -gtk-icon-size: 14px;
   transition: -gtk-icon-transform 120ms ease-out;
 }
 
@@ -309,46 +223,389 @@ window.archive-window button.choice-button label {
   min-width: 0;
 }
 
-/* ---------- Progress and toasts ---------- */
-
-.progress-card {
-  margin: 18px;
-  padding: 14px 16px;
-  min-width: 420px;
-  border-radius: var(--nyx-radius-card);
-  background: @theme_popover;
-  box-shadow: 0 6px 24px alpha(@theme_shadow, 0.45);
-}
-
-.progress-title {
-  font-weight: 600;
-}
-
-.progress-file {
-  font-size: 12px;
-  min-height: 1.2em;
-}
-
-progressbar.job-bar trough {
-  min-height: 6px;
-  border-radius: 999px;
-  background: @track;
-  border: none;
-}
-
-progressbar.job-bar progress {
-  min-height: 6px;
-  border-radius: 999px;
-  background: @theme_accent;
-  border: none;
-}
-
 window.archive-window button.toast-action {
   min-height: 28px;
   margin: -4px -8px -4px 0;
   padding: 0 12px;
   font-weight: 600;
   color: @theme_accent;
+}
+
+/* ---------- One task at a time: start, summary, compress, progress ---------- */
+
+/* Each task page is a centred column; wider windows only add space around it. */
+.task-page {
+  padding: 24px 28px;
+  border-radius: var(--nyx-radius-card);
+  transition: background 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+.task-page.drop-hover {
+  background: alpha(@theme_accent, 0.05);
+  box-shadow: inset 0 0 0 1.5px alpha(@theme_accent, 0.5);
+}
+
+.hero-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.pkg-tile {
+  border-radius: 12px;
+  background: mix(@theme_card, currentColor, 0.18);
+  box-shadow: inset 0 0 0 1px alpha(currentColor, 0.3);
+}
+
+.fmt-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: alpha(currentColor, 0.14);
+}
+
+.chip2 {
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: @theme_dim_text;
+  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.12);
+}
+
+.chip2.ok image {
+  color: @theme_success;
+}
+
+window.archive-window button.big-button {
+  padding: 16px 18px;
+  border-radius: var(--nyx-radius-card);
+}
+
+.big-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.big-detail {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.row2 {
+  margin-top: 8px;
+}
+
+window.archive-window .row2 > button {
+  min-height: 34px;
+  font-weight: 500;
+}
+
+window.archive-window button.ghost {
+  background: transparent;
+  color: @theme_dim_text;
+  font-weight: 500;
+}
+
+window.archive-window button.ghost:hover {
+  background: @row_hover;
+  color: @theme_text;
+}
+
+window.archive-window button.link-button {
+  min-height: 24px;
+  padding: 0 4px;
+  background: transparent;
+  color: @theme_accent;
+  font-weight: 500;
+}
+
+window.archive-window button.link-button:hover {
+  background: alpha(@theme_accent, 0.1);
+}
+
+window.archive-window button.link-button image {
+  -gtk-icon-size: 12px;
+}
+
+/* A card with a hairline edge: what's inside, the recent list. */
+.peek {
+  margin-top: 18px;
+  padding: 4px 0;
+  border-radius: var(--nyx-radius-card);
+  background: @theme_card;
+  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.07);
+}
+
+.peek-head {
+  padding: 6px 10px 4px 14px;
+}
+
+.peek-title {
+  font-weight: 600;
+}
+
+window.archive-window button.peek-row {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 0;
+  background: transparent;
+  color: @theme_text;
+  font-weight: 400;
+}
+
+window.archive-window button.peek-row:hover {
+  background: @row_hover;
+}
+
+.peek-meta {
+  font-size: 12px;
+  color: @theme_dim_text;
+}
+
+.peek-more,
+.peek-empty {
+  padding: 4px 14px 8px;
+  font-size: 12px;
+  color: @theme_text_tertiary;
+}
+
+.recent-row {
+  padding-right: 8px;
+}
+
+window.archive-window .recent-row button.peek-row {
+  min-height: 48px;
+}
+
+.recent-name {
+  font-weight: 500;
+}
+
+.recent-row button.recent-remove {
+  opacity: 0;
+}
+
+.recent-row:hover button.recent-remove,
+.recent-row:focus-within button.recent-remove {
+  opacity: 1;
+}
+
+.more-row {
+  margin-top: 12px;
+}
+
+/* Compress */
+window.archive-window button.files-link {
+  margin: 4px 0 0 -4px;
+}
+
+.files-card {
+  margin-top: 10px;
+  border-radius: var(--nyx-radius-card);
+  background: @theme_card;
+  padding: 6px;
+}
+
+.input-row {
+  padding: 4px 6px 4px 10px;
+  border-radius: var(--nyx-radius-small);
+}
+
+.input-row:hover {
+  background: @row_hover;
+}
+
+.files-empty {
+  padding: 18px 16px;
+}
+
+.files-actions {
+  padding: 6px 4px 4px;
+}
+
+.format-cards {
+  margin: 18px 0;
+}
+
+window.archive-window button.format-card {
+  padding: 12px 14px;
+  border-radius: var(--nyx-radius-card);
+  background: @theme_card;
+  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.07);
+  font-weight: 400;
+}
+
+window.archive-window button.format-card:hover {
+  background: mix(@theme_card, @theme_text, 0.04);
+}
+
+window.archive-window button.format-card.on {
+  background: mix(@theme_card, @theme_accent, 0.12);
+  box-shadow: inset 0 0 0 1.5px alpha(@theme_accent, 0.65);
+}
+
+.format-title {
+  font-weight: 600;
+}
+
+.format-desc {
+  font-size: 12px;
+  color: @theme_dim_text;
+}
+
+.level-title {
+  font-weight: 600;
+  margin: 4px 2px 2px;
+}
+
+.level-ticks {
+  margin: 0 4px;
+  font-size: 10px;
+  color: @theme_text_tertiary;
+}
+
+.cc {
+  margin-top: 18px;
+  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.07);
+}
+
+.cc-row {
+  min-height: 32px;
+  padding: 6px 12px;
+}
+
+.cc > .cc-row + .cc-row,
+.cc > .cc-row + button.more-toggle,
+.cc revealer .cc-row,
+.cc revealer .cc-note {
+  border-top: 1px solid alpha(@theme_text, 0.07);
+}
+
+.cc-key {
+  color: @theme_dim_text;
+}
+
+.cc-desc {
+  font-size: 11px;
+  color: @theme_text_tertiary;
+}
+
+.cc-note {
+  padding: 10px 12px;
+}
+
+.name-field {
+  min-height: 30px;
+  padding: 0 10px 0 0;
+  border-radius: var(--nyx-radius-small);
+  background: @field;
+}
+
+window.archive-window .name-field entry {
+  min-height: 30px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+window.archive-window .cc-row button.path-button {
+  font-weight: 400;
+}
+
+window.archive-window button.more-toggle {
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 0;
+  background: transparent;
+  color: @theme_accent;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+window.archive-window button.more-toggle:hover {
+  background: alpha(@theme_accent, 0.06);
+}
+
+.go-row {
+  margin-top: 18px;
+}
+
+window.archive-window button.go-button {
+  min-height: 34px;
+  padding: 0 16px;
+}
+
+/* Progress */
+.run-card {
+  padding: 24px;
+  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.07);
+}
+
+.job-ring {
+  color: @theme_accent;
+}
+
+.ring-label {
+  font-size: 20px;
+  font-weight: 600;
+  color: @theme_dim_text;
+}
+
+.run-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.run-file {
+  font-size: 11px;
+  color: @theme_text_tertiary;
+}
+
+.run-check {
+  margin: 10px 0 6px;
+  color: @theme_dim_text;
+}
+
+.earlier-title {
+  margin: 22px 4px 8px;
+  font-weight: 600;
+  color: @theme_dim_text;
+}
+
+.history {
+  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.07);
+}
+
+window.archive-window .run-card button {
+  font-weight: 500;
+}
+
+.history-row {
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+.history-row + .history-row {
+  border-top: 1px solid alpha(@theme_text, 0.07);
+}
+
+.ok-icon {
+  color: @theme_success;
+}
+
+.bad-icon {
+  color: @theme_danger;
+}
+
+.history-title {
+  font-weight: 500;
+}
+
+.history-detail {
+  font-size: 12px;
 }
 
 /* ---------- Narrow windows ---------- */
@@ -361,16 +618,12 @@ window.archive-window.narrow .settings-page {
   padding: 12px 16px 40px;
 }
 
+window.archive-window.compact .task-page {
+  padding: 16px 14px;
+}
+
 window.archive-window.narrow .info-card {
   margin-left: 10px;
   margin-right: 10px;
 }
 
-window.archive-window.narrow .create-footer {
-  padding: 10px 14px;
-}
-
-window.archive-window.narrow .progress-card {
-  min-width: 0;
-  margin: 10px;
-}

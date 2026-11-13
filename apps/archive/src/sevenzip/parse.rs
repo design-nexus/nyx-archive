@@ -128,6 +128,22 @@ impl Listing {
         self.entries.iter().filter(|e| !e.is_dir).count()
     }
 
+    /// Every folder, including those that only exist as part of a file's path.
+    pub fn folder_count(&self) -> usize {
+        let mut dirs = std::collections::BTreeSet::new();
+        for e in &self.entries {
+            if e.is_dir {
+                dirs.insert(e.path.as_str());
+            }
+            let mut p = e.parent();
+            while !p.is_empty() {
+                dirs.insert(p);
+                p = p.rsplit_once('/').map(|(a, _)| a).unwrap_or("");
+            }
+        }
+        dirs.len()
+    }
+
     pub fn encrypted(&self) -> bool {
         self.info.headers_encrypted || self.entries.iter().any(|e| e.encrypted)
     }
@@ -227,6 +243,7 @@ Packed Size = 7
         assert_eq!(l.entries[1].modified, "2024-05-01 10:00:01");
         assert!(l.encrypted());
         assert_eq!(l.file_count(), 3);
+        assert_eq!(l.folder_count(), 3);
         assert_eq!(l.total_size(), 527);
     }
 

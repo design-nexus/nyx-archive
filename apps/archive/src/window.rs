@@ -1,10 +1,11 @@
 //! The main window: the header (back, the app and where you are; while browsing, the
-//! archive's details and what's shown and selected; settings) over a stack of three
-//! views (home, browse, create), with a progress card, the settings card and toasts
-//! floating over it.
+//! archive's details and what's shown and selected; the ⋯ menu; settings) over a stack
+//! of views (home, summary, browse, create, progress), with the settings card and
+//! toasts floating over it.
 
 use crate::sevenzip::job::{self, Cancel, Event, Op, Outcome};
-use crate::views::{browse::Browse, create::Create, home::Home};
+use crate::views::progress::{self, Done, Progress};
+use crate::views::{browse::Browse, create::Create, home::Home, summary::Summary};
 use crate::{paths, prefs, settings_dialog, sevenzip, theme, widgets};
 use gtk::prelude::*;
 use nyx_ui::chrome;
@@ -17,6 +18,9 @@ use std::time::Instant;
 /// Under this width tables shed columns and pages use the narrow padding.
 const NARROW_WIDTH: i32 = 860;
 
+/// Under this width the task pages use less padding.
+const COMPACT_WIDTH: i32 = 600;
+
 /// Classes that hide below a window width: toolbar labels go one at a time, least
 /// important first, so a half-screen tile still shows "Extract" and "Add".
 const SHED: [(&str, i32); 6] = [
@@ -28,25 +32,18 @@ const SHED: [(&str, i32); 6] = [
     ("label-high", 640),
 ];
 
-struct Progress {
-    root: gtk::Box,
-    open_when_done: gtk::CheckButton,
-    title: gtk::Label,
-    current: gtk::Label,
-    readout: gtk::Label,
-    bar: gtk::ProgressBar,
-}
-
 struct Ui {
     window: gtk::ApplicationWindow,
     stack: gtk::Stack,
     overlay: gtk::Overlay,
-    progress: Progress,
+    progress: Rc<Progress>,
     home: Rc<Home>,
+    summary: Rc<Summary>,
     browse: Rc<Browse>,
     create: Rc<Create>,
     cancel: RefCell<Option<Cancel>>,
     back: gtk::Button,
+    more: gtk::Button,
     header: chrome::AppHeader,
 }
 
@@ -54,7 +51,16 @@ thread_local! {
     static UI: RefCell<Option<Rc<Ui>>> = const { RefCell::new(None) };
     static WIDTH: Cell<i32> = const { Cell::new(0) };
     static TOAST: RefCell<Option<gtk::Box>> = const { RefCell::new(None) };
+    /// The view to go back to when the progress page closes.
+    static RETURN_TO: RefCell<String> = const { RefCell::new(String::new()) };
+    /// The view New archive was started from, for its Cancel.
+    static CAME_FROM: RefCell<String> = const { RefCell::new(String::new()) };
+    /// Counts jobs, so a late timer can tell its job has already finished.
+    static JOB_SEQ: Cell<u64> = const { Cell::new(0) };
 }
+
+/// Jobs quicker than this never show the progress page.
+const PROGRESS_DELAY_MS: u64 = 250;
 
 fn ui() -> Option<Rc<Ui>> {
     UI.with(|u| u.borrow().clone())
@@ -90,7 +96,13 @@ pub fn present(app: &gtk::Application, req: Request) {
             if let Some(at) = std::env::var("NARC_MEASURE").ok().and_then(|v| v.parse::<i32>().ok()) {
                 shed_in(u.stack.upcast_ref(), at);
             }
-            for (name, w) in [("home", u.home.root.upcast_ref::<gtk::Widget>()), ("browse", u.browse.root.upcast_ref()), ("create", u.create.root.upcast_ref())] {
+            for (name, w) in [
+                ("home", u.home.root.upcast_ref::<gtk::Widget>()),
+                ("summary", u.summary.root.upcast_ref()),
+                ("browse", u.browse.root.upcast_ref()),
+                ("create", u.create.root.upcast_ref()),
+                ("progress", u.progress.root.upcast_ref()),
+            ] {
                 eprintln!("{name}: min width {}", w.measure(gtk::Orientation::Horizontal, -1).0);
                 report_widest(w, 0);
             }
@@ -117,12 +129,38 @@ pub fn window() -> Option<gtk::ApplicationWindow> {
 }
 
 pub fn show(view: &str) {
+    let Some(ui) = ui() else { return };
+    let now = current();
+    // While the progress page is up, other views wait until the job is done.
+    if now == "progress" && view != "progress" && busy() {
+        RETURN_TO.with(|r| *r.borrow_mut() = view.to_string());
+        return;
+    }
+    if view == "create" && !matches!(now.as_str(), "create" | "progress" | "") {
+        CAME_FROM.with(|c| *c.borrow_mut() = now);
+    }
+    ui.stack.set_visible_child_name(view);
+    if view == "home" {
+        ui.home.refresh();
+    }
+    refresh_bars(&ui);
+}
+
+/// One step back: from the file list to the summary, from the summary to the start,
+/// and from New archive to wherever it was started.
+pub fn back() {
+    let target = match current().as_str() {
+        "browse" => "summary".to_string(),
+        "create" => CAME_FROM.with(|c| c.borrow().clone()),
+        _ => "home".to_string(),
+    };
+    show(if target.is_empty() { "home" } else { &target });
+}
+
+/// The open archive was opened, unlocked or changed: bring the summary up to date.
+pub fn archive_changed() {
     if let Some(ui) = ui() {
-        ui.stack.set_visible_child_name(view);
-        if view == "home" {
-            ui.home.refresh();
-        }
-        refresh_bars(&ui);
+        ui.summary.fill();
     }
 }
 
@@ -132,13 +170,15 @@ fn refresh_bars(ui: &Ui) {
     let view = ui.stack.visible_child_name().map(|n| n.to_string()).unwrap_or_default();
     let browsing = view == "browse";
     let page = match view.as_str() {
-        "browse" => ui.browse.title.text().to_string(),
+        "browse" | "summary" => ui.browse.title.text().to_string(),
         "create" => "New archive".to_string(),
+        "progress" => ui.progress.title.text().to_string(),
         _ => String::new(),
     };
     chrome::set_title(&ui.window, "Archive", &page);
-    ui.header.set_subtitle(&page);
-    ui.back.set_visible(view != "home");
+    ui.header.set_subtitle(if browsing { &page } else { "" });
+    ui.back.set_visible(matches!(view.as_str(), "browse" | "create"));
+    ui.more.set_visible(matches!(view.as_str(), "home" | "summary" | "browse"));
     for w in [ui.browse.readonly.upcast_ref::<gtk::Widget>(), ui.browse.subtitle.upcast_ref(), ui.browse.status.upcast_ref()] {
         if let Some(parent) = w.parent() {
             parent.set_visible(browsing);
@@ -180,6 +220,13 @@ fn shed_in(w: &gtk::Widget, width: i32) {
             b.remove_css_class("stacked");
         }
     }
+    // Button rows on task pages stack on a narrow tile.
+    if (w.has_css_class("row2") || w.has_css_class("more-row"))
+        && let Some(b) = w.downcast_ref::<gtk::Box>()
+    {
+        let stacked = width > 0 && width < COMPACT_WIDTH;
+        b.set_orientation(if stacked { gtk::Orientation::Vertical } else { gtk::Orientation::Horizontal });
+    }
     let mut child = w.first_child();
     while let Some(c) = child {
         shed_in(&c, width);
@@ -203,7 +250,7 @@ pub fn fits(class: &str) -> bool {
 }
 
 fn build(app: &gtk::Application) {
-    let window = gtk::ApplicationWindow::builder().application(app).title("Archive").default_width(1280).default_height(800).build();
+    let window = gtk::ApplicationWindow::builder().application(app).title("Archive").default_width(800).default_height(800).build();
     window.add_css_class("archive-window");
     // No client-side titlebar: Hyprland manages the window.
     window.set_titlebar(Some(&gtk::Box::new(gtk::Orientation::Horizontal, 0)));
@@ -213,17 +260,28 @@ fn build(app: &gtk::Application) {
 
     let home = Home::new();
     let browse = Browse::new();
+    let summary = Summary::new(browse.clone());
     let create = Create::new();
+    let progress = Progress::new(|| {
+        if let Some(ui) = ui()
+            && let Some(c) = ui.cancel.borrow().as_ref()
+        {
+            c.cancel();
+        }
+    });
 
     let stack = gtk::Stack::new();
     stack.set_transition_type(gtk::StackTransitionType::Crossfade);
     stack.set_transition_duration(160);
+    // Each view asks only for its own width, so a wide one never clips a narrow one.
+    stack.set_hhomogeneous(false);
     stack.add_named(&home.root, Some("home"));
+    stack.add_named(&summary.root, Some("summary"));
     stack.add_named(&browse.root, Some("browse"));
     stack.add_named(&create.root, Some("create"));
+    stack.add_named(&progress.root, Some("progress"));
     stack.set_visible_child_name("home");
 
-    let progress = build_progress();
     // The views adapt to the width (labels, columns, stacked rows) once the window
     // knows it. This wrapper asks for no width of its own, so a narrow tile is never
     // held open by a view that hasn't adapted yet.
@@ -238,8 +296,8 @@ fn build(app: &gtk::Application) {
     // Back away from the start, the app and where you are; while browsing, whether the
     // archive is read-only, what it holds and what's shown and selected; Settings.
     let header = chrome::app_header(&window, "media-zip-symbolic", "Archive");
-    let back = widgets::bar_button("go-previous-symbolic", "Back to start (Esc)");
-    back.connect_clicked(|_| show("home"));
+    let back = widgets::bar_button("go-previous-symbolic", "Back (Esc)");
+    back.connect_clicked(|_| self::back());
     header.start.append(&back);
     header.end.set_spacing(10);
     let tag = widgets::hbox(0);
@@ -252,18 +310,29 @@ fn build(app: &gtk::Application) {
     let counts = widgets::hbox(0);
     counts.append(&browse.status);
     header.end.append(&counts);
+    let more = widgets::bar_button("view-more-symbolic", "More");
+    more.connect_clicked(more_menu);
+    header.end.append(&more);
     header.end.append(&chrome::settings_button(crate::views::settings::show));
 
     let frame = nyx_ui::frame::AppFrame::new(&header.root);
     frame.set_page(&holder);
     let overlay = frame.install(&window);
-    overlay.add_overlay(&progress.root);
 
     // The window has no resize signal worth trusting, so a tick callback watches the width.
     window.add_tick_callback(|w, _| {
         let width = w.width();
         settings_dialog::fit(w);
-        let tier = |x: i32| SHED.iter().filter(|(_, below)| x < *below).count() + usize::from(x < STACK_ROWS_BELOW);
+        // Task pages trim their padding on a narrow tile.
+        let compact = width > 0 && width < COMPACT_WIDTH;
+        if compact != w.has_css_class("compact") {
+            if compact {
+                w.add_css_class("compact");
+            } else {
+                w.remove_css_class("compact");
+            }
+        }
+        let tier = |x: i32| SHED.iter().filter(|(_, below)| x < *below).count() + usize::from(x < STACK_ROWS_BELOW) + usize::from(x < COMPACT_WIDTH);
         let old = WIDTH.with(Cell::get);
         if old == 0 || tier(old) != tier(width) {
             WIDTH.with(|c| c.set(width));
@@ -300,10 +369,12 @@ fn build(app: &gtk::Application) {
         overlay,
         progress,
         home,
+        summary,
         browse,
         create,
         cancel: RefCell::new(None),
         back,
+        more,
         header,
     });
     refresh_bars(&state);
@@ -362,10 +433,15 @@ fn install_keys(window: &gtk::ApplicationWindow) {
         }
     });
     add("<Control>e", || {
-        if let Some(ui) = ui()
-            && current() == "browse"
-        {
-            ui.browse.extract_default();
+        if let Some(ui) = ui() {
+            match current().as_str() {
+                "browse" => ui.browse.extract_default(),
+                "summary" => {
+                    let (base, new_folder, _) = ui.browse.default_target();
+                    ui.browse.extract_all_to(base, new_folder);
+                }
+                _ => {}
+            }
         }
     });
     add("<Control>comma", crate::views::settings::show);
@@ -387,10 +463,10 @@ fn install_keys(window: &gtk::ApplicationWindow) {
         }
         match key {
             gtk::gdk::Key::Escape => {
-                if view == "browse" {
-                    ui.browse.escape();
-                } else if view == "create" {
-                    show("home");
+                match view.as_str() {
+                    "browse" => ui.browse.escape(),
+                    "create" | "summary" => back(),
+                    _ => {}
                 }
                 glib::Propagation::Stop
             }
@@ -428,61 +504,13 @@ fn window_now() -> Option<gtk::ApplicationWindow> {
     window()
 }
 
-// ---------- Progress ----------
-
-fn build_progress() -> Progress {
-    let root = widgets::vbox(8);
-    root.add_css_class("progress-card");
-    root.set_halign(gtk::Align::Center);
-    root.set_valign(gtk::Align::End);
-    root.set_visible(false);
-
-    let top = widgets::hbox(12);
-    let title = widgets::label("", "progress-title");
-    title.set_hexpand(true);
-    let readout = widgets::label("", "value-readout");
-    readout.add_css_class("dim");
-    let cancel = gtk::Button::with_label("Cancel");
-    cancel.connect_clicked(|_| {
-        if let Some(ui) = ui()
-            && let Some(c) = ui.cancel.borrow().as_ref()
-        {
-            c.cancel();
-        }
-    });
-    top.append(&title);
-    top.append(&readout);
-    top.append(&cancel);
-    root.append(&top);
-
-    let bar = gtk::ProgressBar::new();
-    bar.add_css_class("job-bar");
-    root.append(&bar);
-
-    let bottom = widgets::hbox(12);
-    let current = widgets::label("", "dim");
-    current.add_css_class("dim");
-    current.add_css_class("progress-file");
-    current.set_hexpand(true);
-    current.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-    bottom.append(&current);
-    let open_when_done = gtk::CheckButton::with_label("Open folder when done");
-    open_when_done.add_css_class("dim");
-    open_when_done.set_active(prefs::get().open_when_done);
-    open_when_done.connect_toggled(|c| {
-        let on = c.is_active();
-        prefs::update(|p| p.open_when_done = on);
-    });
-    bottom.append(&open_when_done);
-    root.append(&bottom);
-    Progress { root, open_when_done, title, current, readout, bar }
-}
+// ---------- Jobs ----------
 
 pub fn busy() -> bool {
     ui().is_some_and(|u| u.cancel.borrow().is_some())
 }
 
-/// What the progress card needs to know beyond the operation itself.
+/// What the progress page needs to know beyond the operation itself.
 #[derive(Default)]
 pub struct JobInfo {
     /// Bytes the job reads or writes, for speed and time left (0 when unknown).
@@ -491,11 +519,73 @@ pub struct JobInfo {
     pub folder: Option<PathBuf>,
 }
 
-fn clock(secs: u64) -> String {
-    format!("{}:{:02}", secs / 60, secs % 60)
+/// "about 6 s left", "about 3 min left".
+fn time_left(secs: u64) -> String {
+    match secs {
+        0..60 => format!("about {} s left", secs.max(1)),
+        60..3600 => format!("about {} min left", secs.div_ceil(60)),
+        _ => format!("about {} h {} min left", secs / 3600, secs % 3600 / 60),
+    }
 }
 
-/// Run a 7-Zip job with the progress card showing. `done` gets the outcome on the UI thread.
+fn file_name(path: &Path) -> String {
+    path.file_name().unwrap_or_default().to_string_lossy().to_string()
+}
+
+/// The progress page's heading for a job.
+fn job_title(op: &Op, info: &JobInfo) -> String {
+    match op {
+        Op::Extract { archive, .. } if info.folder.is_none() => format!("Opening {}", file_name(archive)),
+        Op::Extract { archive, .. } => format!("Extracting {}", file_name(archive)),
+        Op::Create(o) => format!("Creating {}", file_name(&o.output)),
+        Op::Add { archive, .. } => format!("Adding files to {}", file_name(archive)),
+        Op::Update { archive, .. } => format!("Updating {}", file_name(archive)),
+        Op::Delete { archive, .. } => format!("Deleting from {}", file_name(archive)),
+        Op::Test { archive, .. } => format!("Testing {}", file_name(archive)),
+    }
+}
+
+/// The Earlier entry for a finished job. Working copies (no folder) aren't listed.
+fn finished(op: &Op, info: &JobInfo, outcome: &Outcome) -> Option<Done> {
+    let (did, failed, name, place): (String, String, String, Option<PathBuf>) = match op {
+        Op::Extract { archive, .. } => {
+            let folder = info.folder.clone()?;
+            let n = file_name(archive);
+            (format!("Extracted {n}"), format!("Couldn't extract {n}"), format!("Into {}", paths::pretty(&folder)), Some(folder))
+        }
+        Op::Create(o) => {
+            let n = file_name(&o.output);
+            let size = std::fs::metadata(&o.output).map(|m| crate::fmt::size(m.len())).unwrap_or_default();
+            let detail = if o.password.is_some() { format!("{size} · password") } else { size };
+            (format!("Created {n}"), format!("Couldn't create {n}"), detail, Some(o.output.clone()))
+        }
+        Op::Add { archive, inputs, .. } => {
+            let n = file_name(archive);
+            (format!("Added {} to {n}", crate::fmt::count(inputs.len(), "item", "items")), format!("Couldn't add files to {n}"), String::new(), Some(archive.clone()))
+        }
+        Op::Update { archive, .. } => {
+            let n = file_name(archive);
+            (format!("Updated {n}"), format!("Couldn't update {n}"), String::new(), Some(archive.clone()))
+        }
+        Op::Delete { archive, paths, .. } => {
+            let n = file_name(archive);
+            (format!("Deleted {} from {n}", crate::fmt::count(paths.len(), "item", "items")), format!("Couldn't delete from {n}"), String::new(), Some(archive.clone()))
+        }
+        Op::Test { archive, .. } => {
+            let n = file_name(archive);
+            (format!("Tested {n}"), format!("{n} didn't pass its test"), "No errors found".to_string(), None)
+        }
+    };
+    Some(match outcome {
+        Outcome::Ok => Done { ok: true, title: did, detail: name, folder: place, log: None },
+        Outcome::Cancelled => Done { ok: false, title: failed, detail: "Canceled".into(), folder: None, log: None },
+        Outcome::WrongPassword => Done { ok: false, title: failed, detail: "The password was missing or didn't work.".into(), folder: None, log: None },
+        Outcome::Failed(m) => Done { ok: false, title: failed, detail: job::summary(m), folder: None, log: Some(m.clone()) },
+    })
+}
+
+/// Run a 7-Zip job, with the progress page up while it runs (unless it's over in a
+/// moment). `done` gets the outcome on the UI thread, back on the view it started from.
 pub fn run_job(op: Op, info: JobInfo, done: impl FnOnce(Outcome) + 'static) {
     let Some(ui) = ui() else { return };
     let Some(binary) = sevenzip::binary() else {
@@ -506,16 +596,20 @@ pub fn run_job(op: Op, info: JobInfo, done: impl FnOnce(Outcome) + 'static) {
         toast("Another job is still running.");
         return;
     }
-    let p = &ui.progress;
-    p.title.set_text(op.title());
-    p.current.set_text("");
-    p.readout.set_text("");
-    p.bar.set_fraction(0.0);
-    p.bar.pulse();
-    p.open_when_done.set_visible(info.folder.is_some());
-    p.root.set_visible(true);
+    ui.progress.start(&job_title(&op, &info), info.folder.is_some());
+    let seq = JOB_SEQ.with(|s| {
+        s.set(s.get() + 1);
+        s.get()
+    });
+    let record = op.clone();
     let (rx, cancel) = job::run(binary, op);
     *ui.cancel.borrow_mut() = Some(cancel);
+    glib::timeout_add_local_once(std::time::Duration::from_millis(PROGRESS_DELAY_MS), move || {
+        if busy() && JOB_SEQ.with(Cell::get) == seq {
+            RETURN_TO.with(|r| *r.borrow_mut() = current());
+            show("progress");
+        }
+    });
     let started = Instant::now();
     glib::spawn_future_local(async move {
         let mut done = Some(done);
@@ -523,19 +617,25 @@ pub fn run_job(op: Op, info: JobInfo, done: impl FnOnce(Outcome) + 'static) {
             match event {
                 Event::Progress(pr) => {
                     let p = &ui.progress;
-                    p.bar.set_fraction(f64::from(pr.percent) / 100.0);
+                    let fraction = f64::from(pr.percent.min(100)) / 100.0;
+                    p.set_fraction(fraction);
                     let elapsed = started.elapsed().as_secs_f64();
-                    let mut parts = vec![format!("{}%", pr.percent)];
+                    let mut parts = Vec::new();
+                    if info.total > 0 {
+                        let so_far = (info.total as f64 * fraction) as u64;
+                        parts.push(format!("{} of {}", crate::fmt::size(so_far), crate::fmt::size(info.total)));
+                    }
                     // Speed and time left only once there's enough to go on.
                     if pr.percent >= 2 && elapsed >= 1.0 {
                         if info.total > 0 {
-                            let rate = info.total as f64 * f64::from(pr.percent) / 100.0 / elapsed;
+                            let rate = info.total as f64 * fraction / elapsed;
                             parts.push(format!("{}/s", crate::fmt::size(rate as u64)));
                         }
                         let left = elapsed * f64::from(100 - pr.percent.min(100)) / f64::from(pr.percent);
-                        parts.push(format!("{} left", clock(left.round() as u64)));
-                    } else {
-                        parts.push(clock(elapsed as u64));
+                        parts.push(time_left(left.round() as u64));
+                    }
+                    if parts.is_empty() {
+                        parts.push("Working…".to_string());
                     }
                     p.readout.set_text(&parts.join(" · "));
                     if !pr.current.is_empty() {
@@ -543,8 +643,17 @@ pub fn run_job(op: Op, info: JobInfo, done: impl FnOnce(Outcome) + 'static) {
                     }
                 }
                 Event::Done(outcome) => {
-                    ui.progress.root.set_visible(false);
                     *ui.cancel.borrow_mut() = None;
+                    if current() == "progress" {
+                        let back = RETURN_TO.with(|r| std::mem::take(&mut *r.borrow_mut()));
+                        show(if back.is_empty() || back == "progress" { "home" } else { &back });
+                    }
+                    if let Some(entry) = finished(&record, &info, &outcome) {
+                        progress::record(entry);
+                        if current() == "home" {
+                            ui.home.refresh();
+                        }
+                    }
                     if outcome == Outcome::Ok
                         && prefs::get().open_when_done
                         && let Some(folder) = &info.folder
@@ -821,6 +930,49 @@ pub fn ask_password(title: &str, desc: &str, on_ok: impl Fn(String) + 'static) {
     entry.connect_activate(move |_| submit());
     dialog.present();
     entry.grab_focus();
+}
+
+/// The header's ⋯ menu: the ways in, and for an open archive the ways around it.
+fn more_menu(anchor: &gtk::Button) {
+    use nyx_ui::menu;
+    let view = current();
+    let mut entries = vec![
+        menu::item("Open an archive…", || {
+            if let Some(ui) = ui() {
+                ui.home.choose_archive();
+            }
+        })
+        .icon("document-open-symbolic")
+        .key("Ctrl+O"),
+        menu::item("New archive", || start_create(Vec::new())).icon("list-add-symbolic").key("Ctrl+N"),
+    ];
+    if view == "summary" || view == "browse" {
+        entries.push(menu::separator());
+        if view == "summary" {
+            entries.push(
+                menu::item("Browse every file", || {
+                    if let Some(ui) = ui() {
+                        ui.browse.browse_at("");
+                    }
+                })
+                .icon("view-list-symbolic"),
+            );
+        } else {
+            entries.push(menu::item("Back to the summary", || show("summary")).icon("go-previous-symbolic").key("Esc"));
+        }
+        entries.push(
+            menu::item("Show in folder", || {
+                if let Some(ui) = ui() {
+                    show_in_folder(&ui.browse.source());
+                }
+            })
+            .icon("folder-symbolic"),
+        );
+        entries.push(menu::item("Close the archive", || show("home")).icon("window-close-symbolic"));
+    }
+    entries.push(menu::separator());
+    entries.push(menu::item("Keyboard shortcuts", crate::views::settings::show_help).icon("input-keyboard-symbolic").key("F1"));
+    menu::popup_below(anchor, entries);
 }
 
 /// Open a folder in the file manager, selecting nothing.

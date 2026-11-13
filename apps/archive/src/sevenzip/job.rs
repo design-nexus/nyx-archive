@@ -104,19 +104,6 @@ pub enum Op {
     Test { archive: PathBuf, password: Option<String> },
 }
 
-impl Op {
-    pub fn title(&self) -> &'static str {
-        match self {
-            Op::Create(_) => "Creating archive",
-            Op::Extract { .. } => "Extracting",
-            Op::Add { .. } => "Adding files",
-            Op::Update { .. } => "Updating the archive",
-            Op::Delete { .. } => "Deleting",
-            Op::Test { .. } => "Testing",
-        }
-    }
-}
-
 /// The password, if there is one. It goes to 7-Zip's stdin, never on the command line
 /// (where other accounts can read it): commands that write take a bare `-p` (read from
 /// stdin), and those that read ask for it on stdin when they meet encryption.
@@ -348,7 +335,8 @@ pub fn parse_progress(line: &str) -> Option<(u8, String)> {
 /// keeps the whole text so the UI can show it under "Details".
 pub fn classify_failure(text: &str) -> Outcome {
     let lower = text.to_lowercase();
-    if lower.contains("wrong password") || lower.contains("data error in encrypted file") {
+    // "Break signaled": 7-Zip asked for a password on stdin and there was none to read.
+    if lower.contains("wrong password") || lower.contains("data error in encrypted file") || lower.contains("break signaled") {
         return Outcome::WrongPassword;
     }
     let text = text.trim();
@@ -630,6 +618,7 @@ mod tests {
     #[test]
     fn classifies_failures() {
         assert_eq!(classify_failure("ERROR: Wrong password : a.txt"), Outcome::WrongPassword);
+        assert_eq!(classify_failure("\nBreak signaled\n"), Outcome::WrongPassword);
         assert_eq!(classify_failure("x\nERROR: No more files\n"), Outcome::Failed("x\nERROR: No more files".into()));
         assert_eq!(summary("x\nERROR: No more files\n"), "No more files");
         assert_eq!(summary("Scanning\nsomething broke"), "something broke");

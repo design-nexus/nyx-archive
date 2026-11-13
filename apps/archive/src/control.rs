@@ -115,10 +115,21 @@ pub fn handle(name: &str, args: Value, reply: Reply) {
                 Err(e) => return reply(Err(e)),
             };
             let overwrite = if args["overwrite"] == true { Overwrite::Replace } else { Overwrite::Skip };
-            let op = Op::Extract { archive: path, dest: dest.clone(), paths: vec![], password: None, overwrite };
-            window::run_job(op, window::JobInfo { total: 0, folder: Some(dest.clone()) }, move |outcome| {
-                reply(finished(outcome, json!({"extracted_to": dest, "existing_files": if overwrite == Overwrite::Replace { "replaced" } else { "kept" }})))
-            });
+            let Some(binary) = sevenzip::binary() else { return reply(Err("7-Zip isn't installed (the 7zip package)".into())) };
+            let listed = path.clone();
+            // The size to unpack, so the progress page can show how much is done and how fast.
+            cmd::background(
+                move || sevenzip::list(binary, &listed, None).map(|l| l.total_size()).unwrap_or(0),
+                move |total| {
+                    if window::busy() {
+                        return reply(Err("another job is still running".into()));
+                    }
+                    let op = Op::Extract { archive: path, dest: dest.clone(), paths: vec![], password: None, overwrite };
+                    window::run_job(op, window::JobInfo { total, folder: Some(dest.clone()) }, move |outcome| {
+                        reply(finished(outcome, json!({"extracted_to": dest, "existing_files": if overwrite == Overwrite::Replace { "replaced" } else { "kept" }})))
+                    });
+                },
+            );
         }
         "archive.create" => {
             let run = || -> Result<CreateOpts, String> {

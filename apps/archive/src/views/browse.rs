@@ -52,6 +52,27 @@ struct State {
     opened: Vec<Opened>,
 }
 
+/// The open archive at a glance, for the summary page.
+pub struct Facts {
+    pub source: PathBuf,
+    pub kind: String,
+    pub files: usize,
+    pub folders: usize,
+    pub packed: u64,
+    pub unpacked: u64,
+    pub encrypted: bool,
+    /// The password is known for this session.
+    pub unlocked: bool,
+    pub editable: bool,
+    /// Opened from the first of several volumes.
+    pub parts: bool,
+    /// The first entries at the top, each folder with how many items it holds.
+    pub top: Vec<(Entry, Option<usize>)>,
+    pub top_count: usize,
+    /// The one folder at the top that `top` lists, if the archive is laid out that way.
+    pub inside: String,
+}
+
 pub struct Browse {
     pub root: gtk::Box,
     /// The archive's name, the line about it and the read-only tag: the window
@@ -68,7 +89,7 @@ pub struct Browse {
     empty_title: gtk::Label,
     scroll: gtk::ScrolledWindow,
     sort_buttons: Vec<(SortKey, gtk::Button)>,
-    info_body: gtk::Box,
+    info_body: gtk::FlowBox,
     /// What's shown and selected, for the window's status bar.
     pub status: gtk::Label,
     extract: gtk::Button,
@@ -118,7 +139,7 @@ fn name_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
-fn icon_for(e: &Entry) -> &'static str {
+pub fn icon_name(e: &Entry) -> &'static str {
     if e.is_dir {
         return "folder-symbolic";
     }
@@ -182,7 +203,7 @@ fn nth(w: &gtk::Widget, n: usize) -> gtk::Widget {
 fn fill_row(row: &gtk::Box, e: &Entry, show_path: bool) {
     let w = row.upcast_ref::<gtk::Widget>();
     let icon = nth(w, 0).downcast::<gtk::Image>().expect("icon");
-    icon.set_icon_name(Some(icon_for(e)));
+    icon.set_icon_name(Some(icon_name(e)));
     if e.is_dir {
         icon.remove_css_class("dim");
         icon.add_css_class("accent-text");
@@ -254,8 +275,12 @@ impl Browse {
         root.append(&header);
 
         // ----- Info card -----
-        let info_body = widgets::hbox(24);
+        let info_body = gtk::FlowBox::new();
         info_body.add_css_class("info-card");
+        info_body.set_selection_mode(gtk::SelectionMode::None);
+        info_body.set_column_spacing(24);
+        info_body.set_row_spacing(10);
+        info_body.set_max_children_per_line(6);
         let info = gtk::Revealer::new();
         info.set_transition_type(gtk::RevealerTransitionType::SlideDown);
         info.set_child(Some(&info_body));
@@ -614,8 +639,107 @@ impl Browse {
         self.search.set_text("");
         self.fill_header();
         self.refresh();
+        window::archive_changed();
+        window::show("summary");
+    }
+
+    /// What the summary page shows about the open archive.
+    pub fn facts(&self) -> Facts {
+        let s = self.state.borrow();
+        let l = &s.listing;
+        let mut top = l.children("");
+        // Many archives hold one folder with everything in it: peek inside that.
+        let mut inside = String::new();
+        if let [only] = top.as_slice()
+            && only.is_dir
+        {
+            inside = only.path.clone();
+            top = l.children(&inside);
+        }
+        top.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| name_cmp(a.name(), b.name())));
+        let top_count = top.len();
+        let top = top
+            .into_iter()
+            .take(5)
+            .map(|e| {
+                let items = if e.is_dir { Some(l.children(&e.path).len()) } else { None };
+                (e, items)
+            })
+            .collect();
+        Facts {
+            source: s.source.clone(),
+            kind: self.kind_label(),
+            files: l.file_count(),
+            folders: l.folder_count(),
+            packed: if l.info.physical_size > 0 { l.info.physical_size } else { std::fs::metadata(&s.source).map(|m| m.len()).unwrap_or(0) },
+            unpacked: l.total_size(),
+            encrypted: l.encrypted(),
+            unlocked: s.password.is_some(),
+            editable: s.source == s.archive && l.editable(),
+            parts: l.info.multivolume,
+            top,
+            top_count,
+            inside,
+        }
+    }
+
+    fn kind_label(&self) -> String {
+        let s = self.state.borrow();
+        if s.source != s.archive {
+            // The tar inside a .tar.gz: name the format by the file the user opened.
+            let name = s.source.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+            name.rsplit_once(".tar.").map(|(_, z)| format!("TAR.{}", z.to_uppercase())).unwrap_or_else(|| "TAR".into())
+        } else if s.listing.info.kind.is_empty() {
+            "Archive".to_string()
+        } else {
+            s.listing.info.kind.to_uppercase()
+        }
+    }
+
+    /// Where Extract puts things by default: the folder, and whether a new folder
+    /// named after the archive goes inside it.
+    pub fn default_target(&self) -> (PathBuf, bool, String) {
+        let p = prefs::get();
+        let source = self.state.borrow().source.clone();
+        let base = if p.extract_dir.is_empty() { source.parent().map(Path::to_path_buf).unwrap_or_default() } else { PathBuf::from(&p.extract_dir) };
+        (base, p.extract_into_folder, archive_stem(&source))
+    }
+
+    /// Extract everything, whatever is selected in the file list.
+    pub fn extract_all_to(self: &Rc<Self>, base: PathBuf, new_folder: bool) {
+        self.selection.unselect_all();
+        self.extract_to(base, new_folder);
+    }
+
+    pub fn choose_and_extract(self: &Rc<Self>) {
+        let t = self.clone();
+        window::choose_folder("Extract to", move |dir| t.extract_all_to(dir, false));
+    }
+
+    /// Show the file list at `dir` ("" for the top).
+    pub fn browse_at(self: &Rc<Self>, dir: &str) {
+        self.go(dir);
         window::show("browse");
         self.view.grab_focus();
+    }
+
+    /// Open one file from the archive in its usual app.
+    pub fn open_entry(self: &Rc<Self>, path: &str) {
+        let parent = path.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+        self.go(&parent);
+        let pos = self.state.borrow().shown.iter().position(|e| e.path == path);
+        if let Some(pos) = pos {
+            self.open_file(pos, false);
+        }
+    }
+
+    pub fn source(&self) -> PathBuf {
+        self.state.borrow().source.clone()
+    }
+
+    pub fn choose_and_add(self: &Rc<Self>) {
+        let t = self.clone();
+        window::choose_files("Add files", false, true, move |files| t.add_files(files));
     }
 
     /// True when 7-Zip can change this archive in place.
@@ -641,20 +765,11 @@ impl Browse {
         if let Some(a) = self.actions.lookup_action("delete").and_downcast::<gio::SimpleAction>() {
             a.set_enabled(editable);
         }
+        let kind = self.kind_label();
         let s = self.state.borrow();
         let name = s.source.file_name().unwrap_or_default().to_string_lossy().to_string();
         self.title.set_text(&name);
         let l = &s.listing;
-        let wrapped = s.source != s.archive;
-        let kind = if wrapped {
-            // The tar inside a .tar.gz: name the format by the file the user opened.
-            let name = s.source.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-            name.rsplit_once(".tar.").map(|(_, z)| format!("TAR.{}", z.to_uppercase())).unwrap_or_else(|| "TAR".into())
-        } else if l.info.kind.is_empty() {
-            "Archive".to_string()
-        } else {
-            l.info.kind.to_uppercase()
-        };
         self.subtitle.set_text(&format!("{kind} · {} · {}", fmt::count(l.file_count(), "file", "files"), fmt::size(l.total_size())));
         while let Some(c) = self.info_body.first_child() {
             self.info_body.remove(&c);
@@ -676,6 +791,10 @@ impl Browse {
             val.set_ellipsize(gtk::pango::EllipsizeMode::End);
             c.append(&val);
             self.info_body.append(&c);
+            // Read-only facts: no stops for the keyboard.
+            if let Some(child) = c.parent() {
+                child.set_focusable(false);
+            }
         }
     }
 
@@ -794,7 +913,7 @@ impl Browse {
         if !self.state.borrow().query.is_empty() {
             self.search.set_text("");
         } else if self.selected_positions().is_empty() {
-            window::show("home");
+            window::show("summary");
         } else {
             self.selection.unselect_all();
         }
@@ -1036,10 +1155,8 @@ impl Browse {
 
     /// Extract the selection (or everything) to the default place.
     pub fn extract_default(self: &Rc<Self>) {
-        let p = prefs::get();
-        let source = self.state.borrow().source.clone();
-        let base = if p.extract_dir.is_empty() { source.parent().map(Path::to_path_buf).unwrap_or_default() } else { PathBuf::from(&p.extract_dir) };
-        self.extract_to(base, p.extract_into_folder);
+        let (base, new_folder, _) = self.default_target();
+        self.extract_to(base, new_folder);
     }
 
     fn extract_to(self: &Rc<Self>, base: PathBuf, new_folder: bool) {
@@ -1091,7 +1208,7 @@ impl Browse {
         }
     }
 
-    fn add_files(self: &Rc<Self>, files: Vec<PathBuf>) {
+    pub fn add_files(self: &Rc<Self>, files: Vec<PathBuf>) {
         if !self.editable() {
             return;
         }
@@ -1141,7 +1258,7 @@ impl Browse {
         );
     }
 
-    fn test_archive(self: &Rc<Self>) {
+    pub fn test_archive(self: &Rc<Self>) {
         let (archive, password, total) = {
             let s = self.state.borrow();
             (s.archive.clone(), s.password.clone(), s.listing.total_size())
@@ -1173,6 +1290,7 @@ impl Browse {
                 }
                 this.fill_header();
                 this.refresh();
+                window::archive_changed();
             }
         });
     }

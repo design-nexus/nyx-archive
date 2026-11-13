@@ -1,6 +1,9 @@
-//! The start view: a drop zone and the recent archives.
+//! The start: one big Open button, New archive beside the other ways in, the recent
+//! archives and this session's finished jobs. Files dropped anywhere on it open or
+//! compress.
 
 use crate::sevenzip;
+use crate::views::progress;
 use crate::{fmt, paths, recent, widgets, window};
 use gtk::prelude::*;
 use gtk::{gdk, glib};
@@ -11,6 +14,7 @@ pub struct Home {
     pub root: gtk::ScrolledWindow,
     recents: gtk::Box,
     recents_group: gtk::Box,
+    earlier: gtk::Box,
     banner: gtk::Box,
 }
 
@@ -37,85 +41,95 @@ pub fn handle_drop(files: Vec<PathBuf>) {
 impl Home {
     pub fn new() -> Rc<Self> {
         let body = widgets::vbox(0);
-        body.add_css_class("settings-page");
+        body.add_css_class("task-page");
+        body.set_valign(gtk::Align::Center);
 
         let banner = widgets::banner(
             "<b>7-Zip isn't installed.</b> Install the <tt>7zip</tt> package (<tt>sudo pacman -S 7zip</tt>), then reopen this window.",
             true,
         );
         banner.set_visible(false);
-        banner.set_margin_top(14);
+        banner.set_margin_bottom(18);
         body.append(&banner);
 
-        // ----- Drop zone -----
-        let zone = widgets::vbox(10);
-        zone.add_css_class("dropzone");
-        zone.set_margin_top(18);
-        zone.set_halign(gtk::Align::Fill);
-        let icon = gtk::Image::from_icon_name("package-x-generic-symbolic");
-        icon.set_pixel_size(44);
-        icon.add_css_class("dropzone-icon");
-        zone.append(&icon);
-        let title = widgets::label("Drop files here", "dropzone-title");
-        title.set_halign(gtk::Align::Center);
-        zone.append(&title);
-        let sub = widgets::label("Drop an archive to open it, or any other files to compress them.", "dim");
-        sub.set_halign(gtk::Align::Center);
+        let hero = widgets::hbox(16);
+        hero.add_css_class("hero");
+        hero.append(&widgets::package_tile("accent", 64));
+        let text = widgets::vbox(2);
+        text.set_valign(gtk::Align::Center);
+        text.set_hexpand(true);
+        let title = widgets::label("Open an archive, or make one", "hero-title");
+        title.set_wrap(true);
+        text.append(&title);
+        let sub = widgets::label("Drop an archive here to open it, or any other files to compress them.", "dim");
         sub.set_wrap(true);
-        sub.set_justify(gtk::Justification::Center);
-        zone.append(&sub);
-        let buttons = widgets::hbox(10);
-        buttons.set_halign(gtk::Align::Center);
-        buttons.set_margin_top(10);
-        let open = widgets::labeled_button("document-open-symbolic", "Open archive");
-        open.add_css_class("suggested-action");
-        open.connect_clicked(|_| choose_archive());
+        text.append(&sub);
+        hero.append(&text);
+        body.append(&hero);
+
+        let big = widgets::big_button("document-open-symbolic");
+        big.title.set_text("Open an archive…");
+        big.detail.set_text("7z, zip, rar, tar, iso and anything else 7-Zip reads");
+        big.button.set_tooltip_text(Some("Open an archive (Ctrl+O)"));
+        big.button.set_margin_top(22);
+        big.button.connect_clicked(|_| choose_archive());
+        body.append(&big.button);
+        let row2 = widgets::hbox(8);
+        row2.add_css_class("row2");
+        row2.set_homogeneous(true);
         let new = widgets::labeled_button("list-add-symbolic", "New archive");
+        new.set_tooltip_text(Some("Compress files into a new archive (Ctrl+N)"));
         new.connect_clicked(|_| window::start_create(Vec::new()));
-        buttons.append(&open);
-        buttons.append(&new);
-        zone.append(&buttons);
-        let target = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
-        let z = zone.clone();
-        target.connect_enter(move |_, _, _| {
-            z.add_css_class("drop-hover");
-            gdk::DragAction::COPY
-        });
-        let z = zone.clone();
-        target.connect_leave(move |_| z.remove_css_class("drop-hover"));
-        let z = zone.clone();
-        target.connect_drop(move |_, value, _, _| {
-            z.remove_css_class("drop-hover");
-            handle_drop(dropped(value));
-            true
-        });
-        zone.add_controller(target);
-        body.append(&zone);
+        let keys = gtk::Button::with_label("Keyboard shortcuts");
+        keys.add_css_class("flat");
+        keys.add_css_class("ghost");
+        keys.set_tooltip_text(Some("F1"));
+        keys.connect_clicked(|_| crate::views::settings::show_help());
+        row2.append(&new);
+        row2.append(&keys);
+        body.append(&row2);
 
         // ----- Recent -----
         let recents_group = widgets::vbox(0);
+        recents_group.add_css_class("peek");
         let head = widgets::hbox(8);
-        let t = widgets::label("RECENT", "group-title");
+        head.add_css_class("peek-head");
+        let t = widgets::label("Recent", "peek-title");
         t.set_hexpand(true);
         head.append(&t);
-        let clear = gtk::Button::with_label("Clear list");
-        clear.add_css_class("flat");
-        clear.add_css_class("small-button");
-        clear.set_valign(gtk::Align::End);
-        clear.set_margin_bottom(4);
+        let clear = widgets::link_button("Clear list", false);
         head.append(&clear);
         recents_group.append(&head);
-        let recents = widgets::vbox(6);
+        let recents = widgets::vbox(0);
         recents_group.append(&recents);
         body.append(&recents_group);
+
+        let earlier = widgets::vbox(0);
+        body.append(&earlier);
 
         let root = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
             .vscrollbar_policy(gtk::PolicyType::External)
-            .child(&widgets::clamp(&body, 920))
+            .child(&widgets::clamp(&body, 676))
             .vexpand(true)
             .build();
-        let home = Rc::new(Home { root, recents, recents_group, banner });
+        let target = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
+        let b = body.clone();
+        target.connect_enter(move |_, _, _| {
+            b.add_css_class("drop-hover");
+            gdk::DragAction::COPY
+        });
+        let b = body.clone();
+        target.connect_leave(move |_| b.remove_css_class("drop-hover"));
+        let b = body.clone();
+        target.connect_drop(move |_, value, _, _| {
+            b.remove_css_class("drop-hover");
+            handle_drop(dropped(value));
+            true
+        });
+        root.add_controller(target);
+
+        let home = Rc::new(Home { root, recents, recents_group, earlier, banner });
         let h = home.clone();
         clear.connect_clicked(move |_| {
             for p in recent::list() {
@@ -143,9 +157,15 @@ impl Home {
         let list = recent::list();
         self.recents_group.set_visible(!list.is_empty());
         for path in list {
-            self.recents.append(&recent_row(&path, self));
+            self.recents.append(&recent_row(&path));
         }
-        window::apply_narrow();
+        while let Some(c) = self.earlier.first_child() {
+            self.earlier.remove(&c);
+        }
+        if progress::has_history() {
+            self.earlier.append(&widgets::label("Earlier", "earlier-title"));
+            self.earlier.append(&progress::history_card());
+        }
     }
 }
 
@@ -153,29 +173,28 @@ pub fn choose_archive() {
     window::choose_files("Open archive", true, false, |files| window::open_archive(files[0].clone()));
 }
 
-fn recent_row(path: &Path, home: &Home) -> gtk::Box {
+fn recent_row(path: &Path) -> gtk::Box {
     let card = widgets::hbox(0);
     card.add_css_class("recent-row");
     let open = gtk::Button::new();
     open.add_css_class("flat");
+    open.add_css_class("peek-row");
     open.set_hexpand(true);
     let c = widgets::hbox(12);
-    let icon = gtk::Image::from_icon_name("package-x-generic-symbolic");
-    icon.add_css_class("accent-text");
-    c.append(&icon);
-    let text = widgets::vbox(1);
+    let kind = widgets::kind_of(path);
+    c.append(&widgets::package_tile(&kind, 30));
+    let text = widgets::vbox(0);
     text.set_hexpand(true);
-    let name = widgets::label(&path.file_name().unwrap_or_default().to_string_lossy(), "settings-option-title");
+    text.set_valign(gtk::Align::Center);
+    let name = widgets::label(&path.file_name().unwrap_or_default().to_string_lossy(), "recent-name");
     name.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
     let dir = path.parent().map(paths::pretty).unwrap_or_default();
-    let sub = widgets::label(&dir, "dim");
-    sub.add_css_class("settings-option-description");
+    let sub = widgets::label(&dir, "peek-meta");
     sub.set_ellipsize(gtk::pango::EllipsizeMode::Start);
     text.append(&name);
     text.append(&sub);
     c.append(&text);
     if let Ok(meta) = std::fs::metadata(path) {
-        let kind = path.extension().map(|e| e.to_string_lossy().to_uppercase()).unwrap_or_default();
         let when = meta
             .modified()
             .ok()
@@ -184,21 +203,19 @@ fn recent_row(path: &Path, home: &Home) -> gtk::Box {
             .and_then(|d| d.format("%-d %b %Y").ok())
             .map(|s| s.to_string())
             .unwrap_or_default();
-        let facts = widgets::label(&format!("{kind} · {} · {when}", fmt::size(meta.len())), "tnum");
-        facts.add_css_class("dim");
-        facts.add_css_class("recent-facts");
-        facts.add_css_class("col-hide-narrow");
-        facts.set_visible(window::fits("col-hide-narrow"));
+        let facts = widgets::label(&format!("{} · {when}", fmt::size(meta.len())), "peek-meta");
+        facts.add_css_class("tnum");
         c.append(&facts);
     }
     open.set_child(Some(&c));
+    open.set_tooltip_text(Some(&paths::pretty(path)));
     let p = path.to_path_buf();
     open.connect_clicked(move |_| window::open_archive(p.clone()));
     card.append(&open);
     let remove = widgets::icon_button("window-close-symbolic", "Remove from recent");
+    remove.add_css_class("recent-remove");
     let p = path.to_path_buf();
     let weak = card.downgrade();
-    let _ = home;
     remove.connect_clicked(move |_| {
         recent::forget(&p);
         if let Some(card) = weak.upgrade()
